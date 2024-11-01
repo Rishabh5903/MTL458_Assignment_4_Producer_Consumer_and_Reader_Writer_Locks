@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <unistd.h>
 
 #define BUFFER_SIZE 100
@@ -11,6 +12,7 @@ typedef struct {
     int head;
     int tail;
     int count;
+    bool producer_finished;  // New flag to track producer status
 } CircularBuffer;
 
 // Global variables
@@ -25,6 +27,7 @@ void init_buffer() {
     cb.head = 0;
     cb.tail = 0;
     cb.count = 0;
+    cb.producer_finished = false;
 }
 
 // Add item to buffer
@@ -48,6 +51,11 @@ unsigned int consume() {
     pthread_mutex_lock(&mutex);
     
     while (cb.count == 0) {
+        // If producer is done and buffer is empty, return 0
+        if (cb.producer_finished) {
+            pthread_mutex_unlock(&mutex);
+            return 0;
+        }
         pthread_cond_wait(&can_consume, &mutex);
     }
     
@@ -63,6 +71,7 @@ unsigned int consume() {
 
 // Print buffer state to file
 void print_buffer_state(unsigned int consumed) {
+    pthread_mutex_lock(&mutex);
     fprintf(output_file, "Consumed:[%u],Buffer State:[", consumed);
     
     if (cb.count > 0) {
@@ -76,6 +85,8 @@ void print_buffer_state(unsigned int consumed) {
         }
     }
     fprintf(output_file, "]\n");
+    fflush(output_file);  // Ensure output is written immediately
+    pthread_mutex_unlock(&mutex);
 }
 
 // Producer thread function
@@ -92,6 +103,11 @@ void* producer(void* arg) {
         produce(num);
     }
     
+    pthread_mutex_lock(&mutex);
+    cb.producer_finished = true;  // Signal that producer is done
+    pthread_cond_broadcast(&can_consume);  // Wake up consumer to check finish condition
+    pthread_mutex_unlock(&mutex);
+    
     fclose(input_file);
     return NULL;
 }
@@ -101,19 +117,13 @@ void* consumer(void* arg) {
     while (1) {
         unsigned int consumed_item = consume();
         
-        pthread_mutex_lock(&mutex);
-        print_buffer_state(consumed_item);
-        pthread_mutex_unlock(&mutex);
+        // Check if we're done
+        if (consumed_item == 0 && cb.producer_finished && cb.count == 0) {
+            break;
+        }
         
-        if (cb.count == 0) {
-            // Check if producer has finished
-            FILE *input_file = fopen("input-part1.txt", "r");
-            if (input_file) {
-                unsigned int last_num;
-                while (fscanf(input_file, "%u", &last_num) == 1) {}
-                fclose(input_file);
-                if (last_num == 0) break;
-            }
+        if (consumed_item > 0) {  // Only print if we actually consumed something
+            print_buffer_state(consumed_item);
         }
     }
     return NULL;
