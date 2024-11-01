@@ -10,25 +10,27 @@ sem_t resource;        // Controls access to the resource
 int read_count = 0;    // Number of readers currently reading
 
 void *reader(void *arg) {
-    FILE *out_file = fopen("Part-2/output-writer-pref.txt", "a");
+    FILE *out_file;
     FILE *shared_file;
     char buffer[1024];
 
-    // Wait if there are writers
     sem_wait(&writeBlock);
-    
-    // Entry section
     sem_wait(&mutex);
-    if(read_count == 0) {
-        sem_wait(&resource);
-    }
+    
+    // Critical section start
     read_count++;
+    out_file = fopen("Part-2/output-writer-pref.txt", "a");
     fprintf(out_file, "Reading,Number-of-readers-present:[%d]\n", read_count);
     fflush(out_file);
+    fclose(out_file);
+    
+    if(read_count == 1) {
+        sem_wait(&resource);
+    }
     sem_post(&mutex);
     sem_post(&writeBlock);
 
-    // Critical section
+    // Reading
     shared_file = fopen("Part-2/shared-file.txt", "r");
     if(shared_file != NULL) {
         while(fgets(buffer, sizeof(buffer), shared_file)) {}
@@ -43,21 +45,21 @@ void *reader(void *arg) {
     }
     sem_post(&mutex);
 
-    fclose(out_file);
     return NULL;
 }
 
 void *writer(void *arg) {
-    FILE *out_file = fopen("Part-2/output-writer-pref.txt", "a");
+    FILE *out_file;
     FILE *shared_file;
 
-    // Entry section - block readers
     sem_wait(&writeBlock);
     sem_wait(&resource);
 
     // Critical section
+    out_file = fopen("Part-2/output-writer-pref.txt", "a");
     fprintf(out_file, "Writing,Number-of-readers-present:[0]\n");
     fflush(out_file);
+    fclose(out_file);
     
     shared_file = fopen("Part-2/shared-file.txt", "a");
     if(shared_file != NULL) {
@@ -65,11 +67,9 @@ void *writer(void *arg) {
         fclose(shared_file);
     }
 
-    // Exit section
     sem_post(&resource);
     sem_post(&writeBlock);
 
-    fclose(out_file);
     return NULL;
 }
 
@@ -83,12 +83,10 @@ int main(int argc, char **argv) {
     sem_init(&writeBlock, 0, 1);
     sem_init(&resource, 0, 1);
 
-    // Create reader threads first
+    // Create reader and writer threads
     for (int i = 0; i < n; i++) {
         pthread_create(&readers[i], NULL, reader, NULL);
     }
-    
-    // Then create writer threads
     for (int i = 0; i < m; i++) {
         pthread_create(&writers[i], NULL, writer, NULL);
     }

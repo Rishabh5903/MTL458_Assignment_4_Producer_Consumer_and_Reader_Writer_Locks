@@ -76,7 +76,7 @@ void generate_input() {
 
     srand(time(NULL));
     for (int i = 0; i < TEST_SIZE; i++) {
-        fprintf(fp, "%d\n", (rand() % 1000) + 1);
+        fprintf(fp, "%d\n", rand() + 1);
     }
     fprintf(fp, "0\n");
     fclose(fp);
