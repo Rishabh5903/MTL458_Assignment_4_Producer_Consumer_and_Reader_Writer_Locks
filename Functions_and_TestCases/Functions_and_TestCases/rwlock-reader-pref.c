@@ -1,131 +1,146 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
-#include <stdlib.h>
+#include <string.h>
 
 typedef struct {
-    sem_t lock;      // binary semaphore (basic lock)
-    sem_t writelock; // allow ONE writer/MANY readers
-    int readers;     // #readers in critical section
-} rwlock_t;
+    sem_t mutex;
+    sem_t wrt;
+    int readCount;
+} RWLock;
 
-rwlock_t rw_lock;
-
-void rwlock_init(rwlock_t *rw) {
-    rw->readers = 0;
-    sem_init(&rw->lock, 0, 1);
-    sem_init(&rw->writelock, 0, 1);
+RWLock* initRWLock() {
+    RWLock* rwlock = (RWLock*)malloc(sizeof(RWLock));
+    sem_init(&rwlock->mutex, 0, 1);
+    sem_init(&rwlock->wrt, 0, 1);
+    rwlock->readCount = 0;
+    return rwlock;
 }
 
-void rwlock_acquire_readlock(rwlock_t *rw) {
-    FILE *out_file;
-    
-    sem_wait(&rw->lock);
-    rw->readers++;
-    
-    // Print status right after incrementing, while still holding the lock
-    out_file = fopen("Part-2/output-reader-pref.txt", "a");
-    fprintf(out_file, "Reading,Number-of-readers-present:[%d]\n", rw->readers);
-    fclose(out_file);
-    
-    if (rw->readers == 1)  // first reader gets writelock
-        sem_wait(&rw->writelock);
-    sem_post(&rw->lock);
-}
-
-void rwlock_release_readlock(rwlock_t *rw) {
-    sem_wait(&rw->lock);
-    rw->readers--;
-    if (rw->readers == 0)  // last reader lets it go
-        sem_post(&rw->writelock);
-    sem_post(&rw->lock);
-}
-
-void rwlock_acquire_writelock(rwlock_t *rw) {
-    sem_wait(&rw->writelock);
-}
-
-void rwlock_release_writelock(rwlock_t *rw) {
-    sem_post(&rw->writelock);
+void destroyRWLock(RWLock* rwlock) {
+    sem_destroy(&rwlock->mutex);
+    sem_destroy(&rwlock->wrt);
+    free(rwlock);
 }
 
 void *reader(void *arg) {
-    FILE *shared_file;
-    char ch;
+    char buffer[256];
+    FILE *outputFile, *sharedFile;
+    RWLock* rwlock = (RWLock*)arg;
     
-    // Acquire read lock and print count (now handled in rwlock_acquire_readlock)
-    rwlock_acquire_readlock(&rw_lock);
-    
-    // Read the shared file
-    shared_file = fopen("Part-2/shared-file.txt", "r");
-    if(shared_file != NULL) {
-        while((ch = fgetc(shared_file)) != EOF) {
-            // Just read the file
-        }
-        fclose(shared_file);
+    // Entry section
+    sem_wait(&rwlock->mutex);
+    rwlock->readCount++;
+    if(rwlock->readCount == 1) {
+        sem_wait(&rwlock->wrt);
+    }
+    // Print status when reader starts
+    outputFile = fopen("output-reader-pref.txt", "a");
+    if (outputFile != NULL) {
+        fprintf(outputFile, "Reading,Number-of-readers-present:[%d]\n", rwlock->readCount);
+        fclose(outputFile);
     }
     
-    // Release read lock
-    rwlock_release_readlock(&rw_lock);
+    sem_post(&rwlock->mutex);
+    
+    // Critical section - Read entire file
+    sharedFile = fopen("shared-file.txt", "r");
+    if (sharedFile != NULL) {
+        while (fgets(buffer, sizeof(buffer), sharedFile)) {
+            // Just reading the file
+        }
+        fclose(sharedFile);
+    }
+
+    
+    // Exit section
+    sem_wait(&rwlock->mutex);
+    rwlock->readCount--;
+    if(rwlock->readCount == 0) {
+        sem_post(&rwlock->wrt);
+    }
+    sem_post(&rwlock->mutex);
     
     return NULL;
 }
 
 void *writer(void *arg) {
-    FILE *out_file;
-    FILE *shared_file;
+    FILE *outputFile, *sharedFile;
+    RWLock* rwlock = (RWLock*)arg;
     
-    // Acquire write lock
-    rwlock_acquire_writelock(&rw_lock);
+    sem_wait(&rwlock->wrt);
     
-    // Print status when writer starts
-    out_file = fopen("Part-2/output-reader-pref.txt", "a");
-    fprintf(out_file, "Writing,Number-of-readers-present:[0]\n");
-    fclose(out_file);
-    
-    // Write to shared file
-    shared_file = fopen("Part-2/shared-file.txt", "a");
-    if(shared_file != NULL) {
-        fprintf(shared_file, "Hello world!\n");
-        fclose(shared_file);
+    outputFile = fopen("output-reader-pref.txt", "a");
+    if (outputFile != NULL) {
+        fprintf(outputFile, "Writing,Number-of-readers-present:[0]\n");
+        fclose(outputFile);
     }
     
-    // Release write lock
-    rwlock_release_writelock(&rw_lock);
+    sharedFile = fopen("shared-file.txt", "a");
+    if (sharedFile != NULL) {
+        fprintf(sharedFile, "Hello world!\n");
+        fclose(sharedFile);
+    }
+    
+    sem_post(&rwlock->wrt);
     
     return NULL;
 }
 
-int main(int argc, char **argv) {
-    if(argc != 3) return 1;
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        printf("Usage: %s <num_readers> <num_writers>\n", argv[0]);
+        return 1;
+    }
+
+    int num_readers = atoi(argv[1]);
+    int num_writers = atoi(argv[2]);
     
-    int n = atoi(argv[1]); // Number of readers
-    int m = atoi(argv[2]); // Number of writers
+    // Initialize the RWLock structure
+    RWLock* rwlock = initRWLock();
     
-    pthread_t readers[n], writers[m];
+    pthread_t *readers = malloc(num_readers * sizeof(pthread_t));
+    pthread_t *writers = malloc(num_writers * sizeof(pthread_t));
     
-    // Initialize the reader-writer lock
-    rwlock_init(&rw_lock);
-    
-    // Create all reader threads first
-    for(int i = 0; i < n; i++) {
-        pthread_create(&readers[i], NULL, reader, NULL);
-        usleep(100);  // Small delay to ensure sequential creation
+    if (!readers || !writers) {
+        printf("Memory allocation failed\n");
+        return 1;
     }
     
-    // Then create writer threads
-    for(int i = 0; i < m; i++) {
-        pthread_create(&writers[i], NULL, writer, NULL);
+    // Create output file
+    FILE *outputFile = fopen("output-reader-pref.txt", "w");
+    if (outputFile != NULL) {
+        fclose(outputFile);
+    }
+    
+    // Create reader threads
+    for(int i = 0; i < num_readers; i++) {
+        if (pthread_create(&readers[i], NULL, reader, rwlock) != 0) {
+            printf("Failed to create reader thread\n");
+        }
+    }
+    
+    // Create writer threads
+    for(int i = 0; i < num_writers; i++) {
+        if (pthread_create(&writers[i], NULL, writer, rwlock) != 0) {
+            printf("Failed to create writer thread\n");
+        }
     }
     
     // Wait for all threads to complete
-    for(int i = 0; i < n; i++) {
+    for(int i = 0; i < num_readers; i++) {
         pthread_join(readers[i], NULL);
     }
-    for(int i = 0; i < m; i++) {
+    for(int i = 0; i < num_writers; i++) {
         pthread_join(writers[i], NULL);
     }
+    
+    // Cleanup
+    destroyRWLock(rwlock);
+    free(readers);
+    free(writers);
     
     return 0;
 }
