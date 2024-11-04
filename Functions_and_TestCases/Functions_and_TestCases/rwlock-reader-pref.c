@@ -109,11 +109,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Create output file
-    FILE *outputFile = fopen("output-reader-pref.txt", "w");
-    if (outputFile != NULL) {
-        fclose(outputFile);
-    }
 
     // Create reader threads
     for (int i = 0; i < num_readers; i++) {
