@@ -20,7 +20,6 @@ void destroyRWLock() {
 }
 
 void *reader(void *arg) {
-    char buffer[1024];
     FILE *outputFile, *sharedFile;
 
     // Entry section
@@ -42,9 +41,17 @@ void *reader(void *arg) {
     // Critical section - Read entire file
     sharedFile = fopen("shared-file.txt", "r");
     if (sharedFile != NULL) {
-        while (fgets(buffer, sizeof(buffer), sharedFile)) {
-            // Just reading the file
+        char *buffer = NULL;
+        size_t bufferSize = 0;
+        ssize_t lineSize;
+
+        // Read each line, automatically resizing the buffer as necessary
+        while ((lineSize = getline(&buffer, &bufferSize, sharedFile)) != -1) {
+            // Process each line here if needed (currently just reading)
         }
+
+        // Free the buffer after use
+        free(buffer);
         fclose(sharedFile);
     }
 
