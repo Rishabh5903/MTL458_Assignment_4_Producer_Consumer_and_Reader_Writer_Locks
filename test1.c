@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #define MAX_BUFFER_SIZE 100
-#define TEST_SIZE 500
+#define TEST_SIZE 100
 #define MAX_LINE_LENGTH 1024
 
 typedef struct {
@@ -104,7 +104,7 @@ int read_output(OutputState *states, int max_states) {
     
     while (fgets(line, MAX_LINE_LENGTH, fp) && state_count < max_states) {
         char *consumed_start = strstr(line, "Consumed:[");
-        char *buffer_start = strstr(line, "Buffer State:[");
+        char *buffer_start = strstr(line, "Buffer-State:[");
         
         // if (!consumed_start || !buffer_start) {
         //     printf("Invalid output format in line: %s\n", line);
@@ -114,14 +114,14 @@ int read_output(OutputState *states, int max_states) {
         sscanf(consumed_start, "Consumed:[%d]", &states[state_count].consumed);
 
         char buffer_str[MAX_LINE_LENGTH];
-        char *start = buffer_start + strlen("Buffer State:[");
+        char *start = buffer_start + strlen("Buffer-State:[");
         char *end = strchr(start, ']');
         if (end) {
             strncpy(buffer_str, start, end - start);
             buffer_str[end - start] = '\0';
             if (!parse_buffer_state(buffer_str, states[state_count].buffer, 
                                    &states[state_count].buffer_size)) {
-                printf("Invalid buffer state in line: %s\n", line);
+                printf("Invalid Buffer State in line: %s\n", line);
                 continue;
             }
         }

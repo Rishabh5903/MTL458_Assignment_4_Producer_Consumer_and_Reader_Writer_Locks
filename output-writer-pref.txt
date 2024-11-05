@@ -1,0 +1,6 @@
+Reading,Number-of-readers-present:[1]
+Writing,Number-of-readers-present:[0]
+Writing,Number-of-readers-present:[0]
+Writing,Number-of-readers-present:[0]
+Writing,Number-of-readers-present:[0]
+Writing,Number-of-readers-present:[0]
