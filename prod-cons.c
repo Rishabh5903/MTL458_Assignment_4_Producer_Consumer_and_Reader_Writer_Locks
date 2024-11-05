@@ -72,7 +72,7 @@ unsigned int consume() {
 // Print buffer state to file
 void print_buffer_state(unsigned int consumed) {
     pthread_mutex_lock(&mutex);
-    fprintf(output_file, "Consumed:[%u],Buffer State:[", consumed);
+    fprintf(output_file, "Consumed:[%u],Buffer-State:[", consumed);
     
     if (cb.count > 0) {
         int current = cb.head;

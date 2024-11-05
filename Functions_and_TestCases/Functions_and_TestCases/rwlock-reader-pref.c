@@ -32,7 +32,7 @@ void *reader(void *arg) {
     // Print status when reader starts
     outputFile = fopen("output-reader-pref.txt", "a");
     if (outputFile != NULL) {
-        fprintf(outputFile, "Reading, Number-of-readers-present: [%d]\n", readCount);
+        fprintf(outputFile, "Reading,Number-of-readers-present:[%d]\n", readCount);
         fclose(outputFile);
     }
 
@@ -74,7 +74,7 @@ void *writer(void *arg) {
     // Print status when writer starts
     outputFile = fopen("output-reader-pref.txt", "a");
     if (outputFile != NULL) {
-        fprintf(outputFile, "Writing, Number-of-readers-present: [%d]\n", readCount);
+        fprintf(outputFile, "Writing,Number-of-readers-present:[%d]\n", readCount);
         fclose(outputFile);
     }
 

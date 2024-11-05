@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #define MAX_BUFFER_SIZE 100
-#define TEST_SIZE 300
+#define TEST_SIZE 500
 #define MAX_LINE_LENGTH 1024
 
 typedef struct {
@@ -82,13 +82,14 @@ void generate_input() {
     fclose(fp);
 }
 
-void parse_buffer_state(char *state, int *buffer, int *size) {
+bool parse_buffer_state(char *buffer_str, int *buffer, int *size) {
     *size = 0;
-    char *token = strtok(state, ",");
+    char *token = strtok(buffer_str, ",");
     while (token != NULL && *size < MAX_BUFFER_SIZE) {
         buffer[(*size)++] = atoi(token);
         token = strtok(NULL, ",");
     }
+    return *size <= MAX_BUFFER_SIZE;
 }
 
 int read_output(OutputState *states, int max_states) {
@@ -105,10 +106,10 @@ int read_output(OutputState *states, int max_states) {
         char *consumed_start = strstr(line, "Consumed:[");
         char *buffer_start = strstr(line, "Buffer State:[");
         
-        if (!consumed_start || !buffer_start) {
-            printf("Invalid output format in line: %s\n", line);
-            continue;
-        }
+        // if (!consumed_start || !buffer_start) {
+        //     printf("Invalid output format in line: %s\n", line);
+        //     continue;
+        // }
 
         sscanf(consumed_start, "Consumed:[%d]", &states[state_count].consumed);
 
@@ -118,8 +119,11 @@ int read_output(OutputState *states, int max_states) {
         if (end) {
             strncpy(buffer_str, start, end - start);
             buffer_str[end - start] = '\0';
-            parse_buffer_state(buffer_str, states[state_count].buffer, 
-                             &states[state_count].buffer_size);
+            if (!parse_buffer_state(buffer_str, states[state_count].buffer, 
+                                   &states[state_count].buffer_size)) {
+                printf("Invalid buffer state in line: %s\n", line);
+                continue;
+            }
         }
 
         state_count++;
