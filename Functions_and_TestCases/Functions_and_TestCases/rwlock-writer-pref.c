@@ -5,43 +5,42 @@
 #include <unistd.h>
 
 // Global variables for synchronization
-sem_t mutex_readcount;    // Protects readCount
-sem_t mutex_writecount;   // Protects writeCount
-sem_t write_pref;        // Writers preference control
-sem_t resource;          // Protects the actual resource
-int readCount = 0;
-int writeCount = 0;
+sem_t mutex_readcount, mutex_writecount, mutex_readtry, wrt;
+int readCount = 0, writeCount = 0;
 
 void *reader(void *arg) {
     FILE *outputFile, *sharedFile;
 
-    // Try to enter critical section
-    sem_wait(&write_pref);     // Check if any writer is waiting
-    sem_wait(&mutex_readcount); // Lock readcount for update
+    // Entry section
+    sem_wait(&mutex_readtry);    // Reader tries to enter
+    sem_wait(&mutex_readcount);  // Lock readcount for update
 
-    // Enter critical section
     readCount++;
-    if (readCount == 1) {
-        sem_wait(&resource);    // First reader locks the resource
+    if (readCount == 1) {        // If first reader
+        sem_wait(&wrt);          // Lock the writer
     }
-
-    // Log reader entry in writer preference output file
+    // Log the reader count inside the critical section right after updating
     outputFile = fopen("output-writer-pref.txt", "a");
     if (outputFile != NULL) {
         fprintf(outputFile, "Reading,Number-of-readers-present:[%d]\n", readCount);
         fclose(outputFile);
     }
 
-    sem_post(&mutex_readcount); // Release readcount lock
-    sem_post(&write_pref);      // Release writer preference check
+    sem_post(&mutex_readcount);  // Release readcount lock
+    sem_post(&mutex_readtry);    // Done trying to read
 
-    // Reading section
+    // Critical section - Read entire file
     sharedFile = fopen("shared-file.txt", "r");
     if (sharedFile != NULL) {
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), sharedFile) != NULL) {
-            // Process read data if needed
+        char *buffer = NULL;
+        size_t bufferSize = 0;
+        ssize_t lineSize;
+
+        while ((lineSize = getline(&buffer, &bufferSize, sharedFile)) != -1) {
+            // Process each line if needed
         }
+
+        free(buffer);
         fclose(sharedFile);
     }
 
@@ -49,7 +48,7 @@ void *reader(void *arg) {
     sem_wait(&mutex_readcount);  // Lock readcount for update
     readCount--;
     if (readCount == 0) {        // If last reader
-        sem_post(&resource);     // Release the resource
+        sem_post(&wrt);          // Release writer lock
     }
     sem_post(&mutex_readcount);  // Release readcount lock
 
@@ -60,24 +59,23 @@ void *writer(void *arg) {
     FILE *outputFile, *sharedFile;
 
     // Entry section
-    sem_wait(&mutex_writecount);
+    sem_wait(&mutex_writecount); // Lock writecount for update
     writeCount++;
-    if (writeCount == 1) {       // First writer
-        sem_wait(&write_pref);   // Block all new readers
+    if (writeCount == 1) {       // If first writer
+        sem_wait(&mutex_readtry); // Prevent new readers
     }
-    sem_post(&mutex_writecount);
+    sem_post(&mutex_writecount); // Release writecount lock
 
-    // Wait for exclusive access
-    sem_wait(&resource);
+    sem_wait(&wrt);             // Wait for readers to finish
 
-    // Log writer entry in writer preference output file
+    // Critical section - Log writer access
     outputFile = fopen("output-writer-pref.txt", "a");
     if (outputFile != NULL) {
         fprintf(outputFile, "Writing,Number-of-readers-present:[%d]\n", readCount);
         fclose(outputFile);
     }
 
-    // Write to shared file
+    // Critical section - Write to shared file
     sharedFile = fopen("shared-file.txt", "a");
     if (sharedFile != NULL) {
         fprintf(sharedFile, "Hello world!\n");
@@ -85,14 +83,14 @@ void *writer(void *arg) {
     }
 
     // Exit section
-    sem_post(&resource);
+    sem_post(&wrt);             // Release writing lock
 
-    sem_wait(&mutex_writecount);
+    sem_wait(&mutex_writecount); // Lock writecount for update
     writeCount--;
-    if (writeCount == 0) {       // Last writer
-        sem_post(&write_pref);   // Allow readers again
+    if (writeCount == 0) {       // If last writer
+        sem_post(&mutex_readtry); // Allow readers again
     }
-    sem_post(&mutex_writecount);
+    sem_post(&mutex_writecount); // Release writecount lock
 
     return NULL;
 }
@@ -109,23 +107,21 @@ int main(int argc, char *argv[]) {
     // Initialize semaphores
     sem_init(&mutex_readcount, 0, 1);
     sem_init(&mutex_writecount, 0, 1);
-    sem_init(&write_pref, 0, 1);
-    sem_init(&resource, 0, 1);
+    sem_init(&mutex_readtry, 0, 1);
+    sem_init(&wrt, 0, 1);
 
     pthread_t readers[num_readers], writers[num_writers];
-
-    // Create writer threads first to demonstrate preference
-    for (int i = 0; i < num_writers; i++) {
-        if (pthread_create(&writers[i], NULL, writer, NULL) != 0) {
-            perror("Failed to create writer thread");
-            return 1;
-        }
-    }
 
     // Create reader threads
     for (int i = 0; i < num_readers; i++) {
         if (pthread_create(&readers[i], NULL, reader, NULL) != 0) {
-            perror("Failed to create reader thread");
+            return 1;
+        }
+    }
+
+    // Create writer threads
+    for (int i = 0; i < num_writers; i++) {
+        if (pthread_create(&writers[i], NULL, writer, NULL) != 0) {
             return 1;
         }
     }
@@ -141,8 +137,8 @@ int main(int argc, char *argv[]) {
     // Cleanup
     sem_destroy(&mutex_readcount);
     sem_destroy(&mutex_writecount);
-    sem_destroy(&write_pref);
-    sem_destroy(&resource);
+    sem_destroy(&mutex_readtry);
+    sem_destroy(&wrt);
 
     return 0;
 }
